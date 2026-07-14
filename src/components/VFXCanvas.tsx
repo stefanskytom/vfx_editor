@@ -102,6 +102,7 @@ export const VFXCanvas: React.FC<VFXCanvasProps> = ({
   const perfMonitorRef = useRef(new PerfMonitor());
 
   const [emitPos, setEmitPos] = useState({ x: CANVAS_W / 2, y: CANVAS_H / 2 });
+  const [symbolDisplaySize, setSymbolDisplaySize] = useState({ w: SYMBOL_SIZE, h: SYMBOL_SIZE });
   const [perfStats, setPerfStats] = useState<PerfSnapshot>(() => perfMonitorRef.current.snapshot());
   const perfUiTimerRef = useRef(0);
 
@@ -192,6 +193,14 @@ export const VFXCanvas: React.FC<VFXCanvasProps> = ({
           const mods = getTimelineModifiers(tl, sceneTimeRef.current);
           emitter.frequency = Math.max(0.001, baseSpawnRef.current / Math.max(0.1, mods.spawnSpeedMult));
           emitter.maxParticles = Math.max(10, Math.round(baseMaxRef.current * mods.maxParticlesMult));
+
+          if (particleContainerRef.current) {
+            particleContainerRef.current.alpha = mods.intensity;
+            particleContainerRef.current.scale.set(mods.scaleStartMult);
+          }
+        } else if (particleContainerRef.current) {
+          particleContainerRef.current.alpha = 1;
+          particleContainerRef.current.scale.set(1);
         }
 
         try {
@@ -247,15 +256,21 @@ export const VFXCanvas: React.FC<VFXCanvasProps> = ({
       symbolSprite.texture = symbolTexture;
       symbolSprite.visible = true;
       const aspect = symbolTexture.width / symbolTexture.height;
+      let displayW = SYMBOL_SIZE;
+      let displayH = SYMBOL_SIZE;
       if (aspect > 1) {
         symbolSprite.width = SYMBOL_SIZE;
         symbolSprite.height = SYMBOL_SIZE / aspect;
+        displayH = SYMBOL_SIZE / aspect;
       } else {
         symbolSprite.width = SYMBOL_SIZE * aspect;
         symbolSprite.height = SYMBOL_SIZE;
+        displayW = SYMBOL_SIZE * aspect;
       }
+      setSymbolDisplaySize({ w: displayW, h: displayH });
     } else {
       symbolSprite.visible = false;
+      setSymbolDisplaySize({ w: SYMBOL_SIZE, h: SYMBOL_SIZE });
     }
 
     if (rebuildTimerRef.current) clearTimeout(rebuildTimerRef.current);
@@ -299,6 +314,10 @@ export const VFXCanvas: React.FC<VFXCanvasProps> = ({
           const mods = getTimelineModifiers(timelineRef.current, sceneTimeRef.current);
           emitter.frequency = Math.max(0.001, baseSpawnRef.current / Math.max(0.1, mods.spawnSpeedMult));
           emitter.maxParticles = Math.max(10, Math.round(baseMaxRef.current * mods.maxParticlesMult));
+          if (particleContainerRef.current) {
+            particleContainerRef.current.alpha = mods.intensity;
+            particleContainerRef.current.scale.set(mods.scaleStartMult);
+          }
         }
       } catch (e) {
         console.error('Failed to parse or create emitter config:', e);
@@ -345,8 +364,8 @@ export const VFXCanvas: React.FC<VFXCanvasProps> = ({
     }
   };
 
-  const symbolW = showSymbol ? SYMBOL_SIZE : 0;
-  const symbolH = showSymbol ? SYMBOL_SIZE : 0;
+  const symbolW = showSymbol ? symbolDisplaySize.w : 0;
+  const symbolH = showSymbol ? symbolDisplaySize.h : 0;
   const showCustomBg = bgColor === 'custom' && customBackgroundUrl && backgroundTransform;
   const containerBgStyle = bgColor === 'custom' ? bgStyles.dark : bgStyles[bgColor];
 

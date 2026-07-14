@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@pixi/particle-emitter": "^5.0.10",
+    "jszip": "^3.10.1",
     "lucide-react": "^1.23.0",
     "pixi.js": "^7.4.3",
     "react": "^19.2.7",

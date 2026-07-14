@@ -298,3 +298,26 @@ export function generateParticleTexture(
 export function getSpriteTypeLabel(spriteType: ParticleSpriteType): string {
   return SPRITE_TYPE_LABELS[spriteType];
 }
+
+/** Exports a procedural particle texture as PNG bytes for package download. */
+export function exportProceduralParticlePng(
+  spriteType: ParticleSpriteType,
+  size = 64
+): Promise<Uint8Array> {
+  const [canvas, ctx] = createCanvas(size);
+  ctx.clearRect(0, 0, size, size);
+  DRAWERS[spriteType](ctx, size);
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      async (blob) => {
+        if (!blob) {
+          reject(new Error('Failed to export procedural particle texture'));
+          return;
+        }
+        resolve(new Uint8Array(await blob.arrayBuffer()));
+      },
+      'image/png'
+    );
+  });
+}

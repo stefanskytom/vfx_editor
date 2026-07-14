@@ -288,6 +288,28 @@ export function TimelineEditor({
                 />
               </label>
               <label>
+                Particles ×
+                <input
+                  type="range"
+                  min={0.1}
+                  max={4}
+                  step={0.1}
+                  value={kf.maxParticlesMult}
+                  onChange={(e) => updateKeyframe(kf.id, { maxParticlesMult: parseFloat(e.target.value) })}
+                />
+              </label>
+              <label>
+                Scale ×
+                <input
+                  type="range"
+                  min={0.1}
+                  max={4}
+                  step={0.1}
+                  value={kf.scaleStartMult}
+                  onChange={(e) => updateKeyframe(kf.id, { scaleStartMult: parseFloat(e.target.value) })}
+                />
+              </label>
+              <label>
                 Intensity
                 <input
                   type="range"

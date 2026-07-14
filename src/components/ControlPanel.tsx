@@ -284,7 +284,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   key={bg}
                   type="button"
                   className={`bg-btn ${bgColor === bg ? 'active' : ''}`}
-                  onClick={() => setBgColor(bg)}
+                  onClick={() => {
+                    if (bg === 'custom' && !customBackgroundUrl) return;
+                    setBgColor(bg);
+                  }}
                   title={bg === 'custom' ? 'Upload your own background image' : undefined}
                 >
                   {bg === 'custom' ? 'Custom Image' : bg}

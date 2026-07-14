@@ -1,4 +1,4 @@
-import { Download, Layers } from 'lucide-react';
+import { Archive, Download, Layers } from 'lucide-react';
 import type { WinStateId, WinStatePack } from '../utils/winStates';
 import { WIN_STATE_LABELS } from '../utils/winStates';
 
@@ -7,6 +7,8 @@ interface WinStateComposerProps {
   winStatePack: WinStatePack | null;
   onSelectState: (state: WinStateId) => void;
   onExport: () => void;
+  onDownloadZip?: () => void;
+  isDownloadingZip?: boolean;
 }
 
 const STATE_ORDER: WinStateId[] = ['idle', 'winSmall', 'winBig', 'jackpot', 'nearMiss'];
@@ -15,7 +17,9 @@ export function WinStateComposer({
   activeState,
   winStatePack,
   onSelectState,
-  onExport
+  onExport,
+  onDownloadZip,
+  isDownloadingZip = false
 }: WinStateComposerProps) {
   return (
     <div className="vfx-card win-state-card">
@@ -25,10 +29,23 @@ export function WinStateComposer({
           Win State Composer
         </h2>
         {winStatePack && (
-          <button type="button" className="icon-btn compact" onClick={onExport}>
-            <Download size={12} />
-            Export
-          </button>
+          <div className="win-state-export-actions">
+            {onDownloadZip && (
+              <button
+                type="button"
+                className="icon-btn compact icon-btn-accent"
+                onClick={onDownloadZip}
+                disabled={isDownloadingZip}
+              >
+                <Archive size={12} />
+                {isDownloadingZip ? 'Pakowanie…' : 'ZIP'}
+              </button>
+            )}
+            <button type="button" className="icon-btn compact" onClick={onExport}>
+              <Download size={12} />
+              JSON
+            </button>
+          </div>
         )}
       </div>
 

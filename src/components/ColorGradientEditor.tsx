@@ -84,8 +84,9 @@ export function ColorGradientEditor({ keyframes, onChange }: ColorGradientEditor
     const left = sorted[midIndex - 1] ?? sorted[0];
     const right = sorted[midIndex] ?? sorted[sorted.length - 1];
     const time = clampCurveTime((left.time + right.time) / 2);
-    onChange(sortCurveKeyframes([...sorted, { time, value: left.value }]));
-    setSelectedIndex(midIndex);
+    const next = sortCurveKeyframes([...sorted, { time, value: left.value }]);
+    onChange(next);
+    setSelectedIndex(next.findIndex((kf) => kf.time === time && kf.value === left.value));
   };
 
   const removeSelected = () => {

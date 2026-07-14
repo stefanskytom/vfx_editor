@@ -5,10 +5,10 @@ import {
   Download,
   Copy,
   Cpu,
-  Terminal,
   Sliders,
   Code2,
-  Check
+  Check,
+  Archive
 } from 'lucide-react';
 import './App.css';
 
@@ -36,6 +36,7 @@ import {
   getParticleTextureUrl
 } from './utils/particleTextures';
 import { generateBoilerplateJS } from './utils/exporter';
+import { downloadVfxPackageZip } from './utils/zipExporter';
 import { buildEmissionMask } from './utils/emissionMask';
 import type { EmissionMaskData, EmissionMaskMode } from './types/emissionMask';
 import {
@@ -59,13 +60,13 @@ import {
 import coinSymbolUrl from './assets/coin_symbol.jpg';
 import wildSymbolUrl from './assets/wild_symbol.jpg';
 
-export default function App() {
-  // Pre-loaded/default symbols
-  const DEFAULT_SYMBOLS = [
-    { id: 'coin', name: 'Golden Coin', url: coinSymbolUrl },
-    { id: 'wild', name: 'Fire Wild', url: wildSymbolUrl }
-  ];
+// Pre-loaded/default symbols
+const DEFAULT_SYMBOLS = [
+  { id: 'coin', name: 'Golden Coin', url: coinSymbolUrl },
+  { id: 'wild', name: 'Fire Wild', url: wildSymbolUrl }
+];
 
+export default function App() {
   // Active texture states
   const [selectedSymbolId, setSelectedSymbolId] = useState<string>('coin');
   const [customImageUrl, setCustomImageUrl] = useState<string | null>(null);
@@ -117,7 +118,6 @@ export default function App() {
 
   // Agent feedback & logs
   const [visualAgentLogs, setVisualAgentLogs] = useState<string[]>([]);
-  const [codeAgentLogs, setCodeAgentLogs] = useState<string[]>([]);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
 
@@ -139,14 +139,16 @@ export default function App() {
   // Tabs for exporting panel
   const [activeTab, setActiveTab] = useState<'json' | 'js' | 'states' | 'timeline'>('json');
   const [copyStatus, setCopyStatus] = useState<boolean>(false);
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
 
   // References for terminal scrolls
   const visualTerminalRef = useRef<HTMLDivElement>(null);
-  const codeTerminalRef = useRef<HTMLDivElement>(null);
   const workflowTimersRef = useRef<{
     logInterval: ReturnType<typeof setInterval> | null;
     timeouts: ReturnType<typeof setTimeout>[];
   }>({ logInterval: null, timeouts: [] });
+  const maskBuildIdRef = useRef(0);
+  const workflowRunIdRef = useRef(0);
 
   const clearWorkflowTimers = () => {
     const timers = workflowTimersRef.current;
@@ -169,34 +171,51 @@ export default function App() {
   const rebuildEmissionMask = async (imageSrc: string | File | null, mode: EmissionMaskMode) => {
     if (!imageSrc || mode === 'point') {
       setEmissionMask(null);
+      setIsBuildingMask(false);
       return;
     }
+
+    const buildId = ++maskBuildIdRef.current;
     setIsBuildingMask(true);
     try {
       const mask = await buildEmissionMask(imageSrc, mode);
+      if (buildId !== maskBuildIdRef.current) return;
+
       setEmissionMask(mask);
       setVisualAgentLogs(prev => [
         ...prev,
         `[VisualAgent] Emission mask built: ${mode} (${mask.polygon.length} spawn points).`
       ]);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      if (buildId !== maskBuildIdRef.current) return;
       console.error(e);
       setEmissionMask(null);
     } finally {
-      setIsBuildingMask(false);
+      if (buildId === maskBuildIdRef.current) {
+        setIsBuildingMask(false);
+      }
     }
   };
 
   useEffect(() => {
-    const url = getActiveImageUrl();
+    const url =
+      selectedSymbolId === 'custom'
+        ? customImageUrl
+        : DEFAULT_SYMBOLS.find((s) => s.id === selectedSymbolId)?.url ?? null;
     if (url) {
       rebuildEmissionMask(url, emissionMaskMode);
+    } else if (emissionMaskMode === 'point') {
+      setEmissionMask(null);
     }
   }, [emissionMaskMode, selectedSymbolId, customImageUrl]);
 
   // Run initial analysis on first load (default Coin symbol)
   useEffect(() => {
     runAIWorkflow(coinSymbolUrl, 'coin_symbol', 'gold');
+    return () => {
+      workflowRunIdRef.current += 1;
+      clearWorkflowTimers();
+    };
   }, []);
 
   // Scroll terminals to bottom when logs update
@@ -206,18 +225,12 @@ export default function App() {
     }
   }, [visualAgentLogs]);
 
-  useEffect(() => {
-    if (codeTerminalRef.current) {
-      codeTerminalRef.current.scrollTop = codeTerminalRef.current.scrollHeight;
-    }
-  }, [codeAgentLogs]);
-
   // AI Agent analysis and generator sequence
   const runAIWorkflow = async (imageSrc: string | File, name: string, forcedType?: 'gold' | 'fire' | 'magic' | 'standard') => {
+    const runId = ++workflowRunIdRef.current;
     clearWorkflowTimers();
     setIsAnalyzing(true);
     setVisualAgentLogs(['[VisualAgent] Initializing image channels...', '[VisualAgent] Scanning transparent canvas borders...']);
-    setCodeAgentLogs(['[CodeAgent] Awaiting VisualAgent report...']);
     setAnalysisResult(null);
 
     try {
@@ -227,6 +240,11 @@ export default function App() {
       // Simulate real-time logs parsing
       let currentLogIndex = 0;
       const logInterval = setInterval(() => {
+        if (runId !== workflowRunIdRef.current) {
+          clearInterval(logInterval);
+          return;
+        }
+
         if (currentLogIndex < result.logs.length) {
           setVisualAgentLogs(prev => [...prev, `[VisualAgent] ${result.logs[currentLogIndex]}`]);
           currentLogIndex++;
@@ -234,17 +252,17 @@ export default function App() {
           clearInterval(logInterval);
           workflowTimersRef.current.logInterval = null;
 
+          if (runId !== workflowRunIdRef.current) return;
+
           setVisualAgentLogs(prev => [...prev, `[VisualAgent] Analysis complete. Bounding box & dominant colors dispatched.`]);
           setAnalysisResult(result);
 
           const t1 = setTimeout(() => {
-            setCodeAgentLogs(prev => [
-              ...prev,
-              `[CodeAgent] Report received. Type: '${forcedType || result.symbolType}', dominant color: ${result.dominantColor}.`,
-              `[CodeAgent] Generating PixiJS emitter configuration...`,
-            ]);
+            if (runId !== workflowRunIdRef.current) return;
 
             const t2 = setTimeout(() => {
+              if (runId !== workflowRunIdRef.current) return;
+
               const recommended = getRecommendedParams(
                 forcedType || result.symbolType,
                 result.dominantColor,
@@ -257,15 +275,9 @@ export default function App() {
               setActiveWinState('idle');
               setParams(pack.idle);
 
-              setCodeAgentLogs(prev => [
+              setVisualAgentLogs(prev => [
                 ...prev,
-                `[CodeAgent] Particle preset mapped to: '${recommended.preset.toUpperCase()}'`,
-                `[CodeAgent] Procedural sprite generated: '${getSpriteTypeLabel(recommended.particleSpriteType)}'`,
-                `[CodeAgent] Win State Composer: 5 states generated (idle → jackpot).`,
-                `[CodeAgent] Speed limits adjusted: ${recommended.speedMin}-${recommended.speedMax} px/s.`,
-                `[CodeAgent] Gravity acceleration vector set: [X: ${recommended.accelX}, Y: ${recommended.accelY}].`,
-                `[CodeAgent] Alpha transitions applied. Emitter config injected to preview canvas successfully.`,
-                `[CodeAgent] READY: Developer can fine-tune values in Review Mode.`
+                `[VisualAgent] Emitter config ready: ${recommended.preset.toUpperCase()} preset, 5 win states generated.`
               ]);
               setIsAnalyzing(false);
             }, 600);
@@ -276,9 +288,11 @@ export default function App() {
       }, 150);
       workflowTimersRef.current.logInterval = logInterval;
 
-    } catch (e: any) {
+    } catch (e: unknown) {
+      if (runId !== workflowRunIdRef.current) return;
       console.error(e);
-      setVisualAgentLogs(prev => [...prev, `[VisualAgent] [ERROR] Failed to read image channels: ${e.message}`]);
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      setVisualAgentLogs(prev => [...prev, `[VisualAgent] [ERROR] Failed to read image channels: ${message}`]);
       setIsAnalyzing(false);
     }
   };
@@ -299,6 +313,7 @@ export default function App() {
       runAIWorkflow(file, cleanName);
     };
     reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // Preset switch triggers a fresh code agent parameter map without visual re-scan
@@ -307,12 +322,6 @@ export default function App() {
 
     if (newParams.preset !== params.preset) {
       const spriteType = getSpriteTypeForPreset(newParams.preset);
-      setCodeAgentLogs(prev => [
-        ...prev,
-        `[CodeAgent] Preset updated to '${newParams.preset.toUpperCase()}'.`,
-        `[CodeAgent] Sprite asset switched to: '${getSpriteTypeLabel(spriteType)}'.`,
-        `[CodeAgent] Injecting parameters: spawnSpeed: ${newParams.spawnSpeed}, blendMode: ${newParams.blendMode}.`
-      ]);
       nextParams = { ...newParams, particleSpriteType: spriteType };
     }
 
@@ -328,36 +337,24 @@ export default function App() {
     setWinStatePack(updated);
     setActiveWinState(state);
     setParams(updated[state]);
-    setCodeAgentLogs(prev => [
-      ...prev,
-      `[CodeAgent] Win state switched to '${state}'. Loading ${updated[state].preset} preset.`
-    ]);
   };
 
   const handleMaskModeChange = (mode: EmissionMaskMode) => {
     setEmissionMaskMode(mode);
-    const url = getActiveImageUrl();
-    if (url) rebuildEmissionMask(url, mode);
   };
 
   const handleCustomSpriteUpload = (url: string | null) => {
     setCustomParticleSpriteUrl(url);
     if (url) {
       setTextureSource('custom');
-      setCodeAgentLogs(prev => [
-        ...prev,
-        `[CodeAgent] Custom particle sprite loaded. Texture source: CUSTOM.`
-      ]);
+    } else {
+      setTextureSource('procedural');
     }
   };
 
   const handleParticleTextureSelect = (id: string) => {
     setSelectedParticleTextureId(id);
     setTextureSource('library');
-    setCodeAgentLogs(prev => [
-      ...prev,
-      `[CodeAgent] Particle texture selected: '${id}'. Texture source: LIBRARY.`
-    ]);
   };
 
   const handleCustomBackgroundUpload = (url: string | null, naturalWidth: number, naturalHeight: number) => {
@@ -366,10 +363,6 @@ export default function App() {
     setBackgroundNaturalSize({ w: naturalWidth, h: naturalHeight });
     setBackgroundTransform(createDefaultBackgroundTransform(naturalWidth, naturalHeight, 600, 500));
     setBgColor('custom');
-    setCodeAgentLogs(prev => [
-      ...prev,
-      `[CodeAgent] Custom background loaded (${naturalWidth}x${naturalHeight}). Use transform box to pan/scale.`
-    ]);
   };
 
   const handleBackgroundFit = () => {
@@ -395,11 +388,8 @@ export default function App() {
 
   const libraryParticleTextureUrl = getParticleTextureUrl(selectedParticleTextureId);
 
-  const makeEmitterConfig = (p: EmitterParams) =>
-    generateEmitterConfig({ ...p, textureName: particleName }, emissionMask);
-
   const emitterConfig = useMemo(
-    () => makeEmitterConfig(params),
+    () => generateEmitterConfig({ ...params, textureName: particleName }, emissionMask),
     [params, particleName, emissionMask]
   );
 
@@ -457,10 +447,49 @@ export default function App() {
     }
   };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(getExportContent());
-    setCopyStatus(true);
-    setTimeout(() => setCopyStatus(false), 2000);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(getExportContent());
+      setCopyStatus(true);
+      setTimeout(() => setCopyStatus(false), 2000);
+    } catch {
+      setCopyStatus(false);
+    }
+  };
+
+  const handleDownloadZip = async () => {
+    setIsDownloadingZip(true);
+
+    try {
+      await downloadVfxPackageZip({
+        particleName,
+        params,
+        textureSource,
+        particleSpriteType: params.particleSpriteType,
+        selectedParticleTextureId,
+        customParticleSpriteUrl,
+        libraryParticleTextureUrl,
+        symbolImageUrl: getActiveImageUrl(),
+        emitterConfig,
+        winStatesExport,
+        timelineExport,
+        emissionMask
+      });
+
+      setVisualAgentLogs(prev => [
+        ...prev,
+        `[VisualAgent] ZIP downloaded: ${particleName}-vfx-package.zip`
+      ]);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      console.error(e);
+      setVisualAgentLogs(prev => [
+        ...prev,
+        `[VisualAgent] [ERROR] ZIP export failed: ${message}`
+      ]);
+    } finally {
+      setIsDownloadingZip(false);
+    }
   };
 
   const handleDownload = () => {
@@ -468,24 +497,28 @@ export default function App() {
     const filename = getExportFilename();
     const mime = activeTab === 'js' ? 'application/javascript' : 'application/json';
     const blob = new Blob([content], { type: mime });
+    const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href = objectUrl;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(objectUrl);
   };
 
   const handleExportWinStates = () => {
     if (!winStatesExport) return;
     setActiveTab('states');
     const blob = new Blob([JSON.stringify(winStatesExport, null, 2)], { type: 'application/json' });
+    const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href = objectUrl;
     link.download = `${particleName}-vfx-states.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(objectUrl);
   };
 
   return (
@@ -600,21 +633,76 @@ export default function App() {
             )}
           </div>
 
-          {/* Code Agent Generator Panel */}
-          <div className="vfx-card">
-            <div className="agent-header">
-              <div className="agent-avatar agent-code-avatar">
-                <Terminal size={14} />
+          {/* Export & Download */}
+          <div className="export-panel export-panel-left">
+            <div className="export-panel-title">
+              <Download size={16} className="text-purple-400" />
+              <div>
+                <h3>Export &amp; Download</h3>
+                <p>Pobierz pełny pakiet .zip ze sprite&apos;em, configiem i kodem JS</p>
               </div>
-              <span className="agent-name" style={{ color: 'var(--accent-purple)' }}>Code Agent</span>
             </div>
-            <div className="console-output" ref={codeTerminalRef}>
-              {codeAgentLogs.map((log, index) => (
-                <div key={index} className={`console-line ${log.includes('READY') ? 'accent' : ''}`}>
-                  {log}
-                </div>
-              ))}
+
+            <div className="export-download-row">
+              <button
+                type="button"
+                className="export-zip-btn"
+                onClick={handleDownloadZip}
+                disabled={isDownloadingZip}
+              >
+                <Archive size={16} />
+                {isDownloadingZip ? 'Pakowanie…' : 'Pobierz ZIP Package'}
+              </button>
+              <button type="button" className="icon-btn" onClick={handleCopy}>
+                {copyStatus ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                {copyStatus ? 'Skopiowano!' : 'Kopiuj kod'}
+              </button>
+              <button type="button" className="icon-btn" onClick={handleDownload}>
+                <Download size={12} />
+                Pobierz plik
+              </button>
             </div>
+
+            <div className="export-header">
+              <div className="tabs-group">
+                <button
+                  type="button"
+                  className={`tab-btn ${activeTab === 'json' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('json')}
+                >
+                  <Code2 size={13} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />
+                  config.json
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${activeTab === 'js' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('js')}
+                >
+                  <Code2 size={13} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />
+                  vfx-emitter.js
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${activeTab === 'states' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('states')}
+                >
+                  <Code2 size={13} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />
+                  vfx-states.json
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${activeTab === 'timeline' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('timeline')}
+                >
+                  <Code2 size={13} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />
+                  timeline.json
+                </button>
+              </div>
+            </div>
+
+            <pre className="code-container">
+              <code>{getExportContent()}</code>
+            </pre>
           </div>
 
         </section>
@@ -656,61 +744,6 @@ export default function App() {
             onPlayToggle={() => setTimelinePlaying((p) => !p)}
             onSceneTimeChange={setSceneTime}
           />
-
-          {/* Export Code Editor Drawer */}
-          <div className="export-panel">
-            <div className="export-header">
-              <div className="tabs-group">
-                <button
-                  type="button"
-                  className={`tab-btn ${activeTab === 'json' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('json')}
-                >
-                  <Code2 size={13} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />
-                  config.json
-                </button>
-                <button
-                  type="button"
-                  className={`tab-btn ${activeTab === 'js' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('js')}
-                >
-                  <Code2 size={13} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />
-                  vfx-emitter.js
-                </button>
-                <button
-                  type="button"
-                  className={`tab-btn ${activeTab === 'states' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('states')}
-                >
-                  <Code2 size={13} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />
-                  vfx-states.json
-                </button>
-                <button
-                  type="button"
-                  className={`tab-btn ${activeTab === 'timeline' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('timeline')}
-                >
-                  <Code2 size={13} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'text-bottom' }} />
-                  timeline.json
-                </button>
-              </div>
-
-              <div className="export-actions">
-                <button type="button" className="icon-btn" onClick={handleCopy}>
-                  {copyStatus ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-                  {copyStatus ? 'Copied!' : 'Copy'}
-                </button>
-                <button type="button" className="icon-btn" onClick={handleDownload}>
-                  <Download size={12} />
-                  Download
-                </button>
-              </div>
-            </div>
-
-            <pre className="code-container">
-              <code>{getExportContent()}</code>
-            </pre>
-          </div>
 
         </section>
 
