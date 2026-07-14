@@ -8,7 +8,9 @@
     "dev:restart": "node scripts/restart-dev.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "manual:capture": "node scripts/capture-manual-screenshots.mjs",
+    "manual:build": "node scripts/capture-manual-screenshots.mjs && node scripts/build-manual-pdf.mjs"
   },
   "dependencies": {
     "@pixi/particle-emitter": "^5.0.10",
@@ -24,6 +26,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
+    "playwright": "^1.61.1",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
   }
